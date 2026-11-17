@@ -377,7 +377,7 @@ def extract_vurze(path: Path) -> dict:
         if nid not in seen_ids:
             seen_ids[nid] = "attr:" + name
             nodes.append({"id": nid, "label": "@" + name, "file_type": "code",
-                          "source_location": f"L{line}",
+                          "source_file": "", "source_location": f"L{line}",
                           "metadata": {"language": _LANGUAGE, "kind": "attribute"}})
         return nid
 
@@ -690,7 +690,7 @@ def extract_vurze(path: Path) -> dict:
             if stub not in seen_ids:
                 seen_ids[stub] = "module:" + raw
                 nodes.append({"id": stub, "label": raw, "file_type": "code",
-                              "source_location": f"L{line}",
+                              "source_file": "", "source_location": f"L{line}",
                               "metadata": {"language": _LANGUAGE, "kind": "external_module"}})
             add_edge(file_nid, stub, "imports_from", line)
     for aname, line in module_attrs:
