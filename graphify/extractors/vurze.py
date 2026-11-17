@@ -742,6 +742,12 @@ def extract_vurze(path: Path) -> dict:
                     named = [x for x, _ in fts]
                     if named:
                         struct_fields[d["name"]][fname] = named[0]
+                if struct_fields[d["name"]]:
+                    # for the resolver: `x.field.m()` where x's struct lives in this file
+                    for item in nodes:
+                        if item["id"] == nid:
+                            item["metadata"]["field_types"] = dict(list(struct_fields[d["name"]].items())[:64])
+                            break
     for d in decls:
         kind = d["kind"]
         if kind in type_kinds:
@@ -968,6 +974,8 @@ def extract_vurze(path: Path) -> dict:
                         bt = self_type if base == "self" else scope_types.get(base)
                         if bt and not bt.startswith("=") and bt in struct_fields:
                             recv_type = struct_fields[bt].get(rv)
+                        elif bt and not bt.startswith(("=", "#")):
+                            recv_type = f"#{bt}.{rv}"  # a field of a struct declared elsewhere
                     bind_method(caller, recv_type, tv, tl)
                 j += 1
                 continue
@@ -1265,6 +1273,11 @@ def resolve_vurze_references(
             recv = rc.get("receiver_type")
             if recv and str(recv).startswith("="):
                 recv = ret_type.get(str(recv)[1:])
+            elif recv and str(recv).startswith("#"):
+                sname, _dot, field = str(recv)[1:].partition(".")
+                got = pick([(nid, f) for nid, f, k in defs.get(sname, []) if k == "struct"], caller_file)
+                ftypes = ((node_by_id.get(got[0], {}).get("metadata") or {}).get("field_types") or {}) if got else {}
+                recv = ftypes.get(field)
             if recv:
                 got = pick(methods.get((str(recv), name), []), caller_file)
                 if got:

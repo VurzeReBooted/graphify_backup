@@ -6509,6 +6509,8 @@ def test_vurze_cross_file_resolution(tmp_path):
     assert not any(t == "helper()" and s != "helper()" for s, t, _c, _f in calls if s in ("trace()", "main()"))
     # the receiver's type comes from the call that made it (v = v3(...) -> Vec3)
     assert ("trace()", ".unit()", "call", "EXTRACTED") in calls
+    # r.origin.len(): r is a Ray, Ray.origin a Vec3 (both declared in lib/vec.vz)
+    assert ("trace()", ".len()", "call", "EXTRACTED") in calls
     # an extern C symbol lands on the one shared extern node
     assert (".len()", "sqrtf()", "extern_call", "EXTRACTED") in calls
     refs = _vz_edges(r, "references")

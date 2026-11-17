@@ -15,6 +15,7 @@ fn on_tick(dt: f32) -> i64 { return 0 }
 var tick_hook: fn(f32) -> i64 = on_tick
 
 fn trace(sc: *Scene<i64>, r: Ray) -> f32 {
+  let d0 = r.origin.len()   // a field of a struct declared in lib/vec.vz
   var v = v3(1.0, 2.0, 3.0)
   let u = v.unit()
   let k = sizeof[Vec3] as f32

@@ -386,7 +386,8 @@ def extract_toml(path: Path) -> dict:
         return {"nodes": [], "edges": [], "error": str(exc)}
     if len(raw) > _TOML_MAX_BYTES:
         return {"nodes": [], "edges": [], "error": "toml file too large to index"}
-    text = raw.decode("utf-8", errors="replace").lstrip("﻿")
+    # line endings must not change the graph (CRLF checkouts on Windows)
+    text = raw.decode("utf-8", errors="replace").lstrip("\ufeff").replace("\r\n", "\n")
     max_keys = _max_keys()
     records, error = _parse(text, max_keys)
 
@@ -473,7 +474,8 @@ def extract_toml(path: Path) -> dict:
             continue
         if len(traw) > _TOML_MAX_BYTES:
             continue
-        trecords, _terr = _parse(traw.decode("utf-8", errors="replace").lstrip("\ufeff"), max_keys)
+        ttext = traw.decode("utf-8", errors="replace").lstrip("\ufeff").replace("\r\n", "\n")
+        trecords, _terr = _parse(ttext, max_keys)
         tstem = _file_stem(target)
         tpaths = {(r["kind"] == "key", r["path"]): r for r in trecords}
         for is_key, ids in ((False, table_ids), (True, key_ids)):

@@ -342,6 +342,8 @@ Both encourage scoped graph queries before broad source searches. Choose the ins
 
 graphify parses ~40 programming languages locally with tree-sitter AST, and maps docs, PDFs, images, and audio/video through an optional semantic pass. Full list: **[Supported inputs](https://docs.graphify.com/concepts/supported-inputs)**.
 
+This fork also reads **Vurze** (`.vz`) and **TOML** (`.toml`) in the local AST pass, including the cross-file binding of Vurze names through each file's imports and the `overrides` edges of mods over base content: **[Vurze and TOML](docs/vurze-and-toml.md)**.
+
 ---
 
 ## Common commands

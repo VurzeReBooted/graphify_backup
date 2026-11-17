@@ -39,8 +39,14 @@ _MD_WIKILINK_RE = re.compile(r'(?<!\!)\[\[([^\]|#]+?)(?:\\?\|[^\]]*|#[^\]]*)?\]\
 # the extensions the Obsidian wikilink index covers.
 _MD_LINKABLE_EXTS = {".md", ".mdx", ".qmd", ".markdown", ".rst", ".txt"}
 
+# The code extensions Markdown treats as source files. `.toml` joined
+# CODE_EXTENSIONS for its own (config) extractor; prose names `pyproject.toml`
+# far more often than it cites one, so spans and links to it classify as they
+# did before it was an AST input.
+_MD_CODE_EXTS = CODE_EXTENSIONS - {".toml"}
+
 # Source files can be linked as citations and resolved to references edges (#4804).
-_MD_CITEABLE_EXTS = _MD_LINKABLE_EXTS | CODE_EXTENSIONS
+_MD_CITEABLE_EXTS = _MD_LINKABLE_EXTS | _MD_CODE_EXTS
 
 # Inline code spans, single or double backtick delimited. Fenced blocks are
 # skipped before this runs, so a span here is prose citing a symbol by name.
@@ -427,7 +433,7 @@ def _code_span_mention(span: str) -> "tuple[str | None, list[str]] | None":
         return m.group(1), m.group(2).split("::")
     if not text.endswith("()"):
         fm = _MD_FILE_SPAN_RE.match(text)
-        if fm and "." + fm.group(2).lower() in CODE_EXTENSIONS:
+        if fm and "." + fm.group(2).lower() in _MD_CODE_EXTS:
             return text, []
     m = _MD_BARE_MENTION_RE.match(text)
     if m:
@@ -438,7 +444,7 @@ def _code_span_mention(span: str) -> "tuple[str | None, list[str]] | None":
             # only code files are evidence for a bare mention. Other file-like
             # spans (``pyproject.toml``) classify as a mention and are rejected at
             # resolution, where the qualifier ``pyproject`` matches no callable.
-            if "." + m.group(1) in CODE_EXTENSIONS:
+            if "." + m.group(1) in _MD_CODE_EXTS:
                 return text, []
             if "." + m.group(1) in DOC_EXTENSIONS:
                 return None
@@ -615,7 +621,7 @@ def extract_markdown(path: Path) -> dict:
         if resolved is None:
             return False
         suffix = resolved.suffix.lower()
-        return suffix in CODE_EXTENSIONS and suffix not in _MD_LINKABLE_EXTS
+        return suffix in _MD_CODE_EXTS and suffix not in _MD_LINKABLE_EXTS
 
     # Dedup link edges by resolved target node so a hub doc that links to the
     # same sibling many times yields one edge, not N (keeps weights meaningful).
@@ -629,7 +635,7 @@ def extract_markdown(path: Path) -> dict:
         if resolved is None:
             return
         suffix = resolved.suffix.lower()
-        if suffix in CODE_EXTENSIONS and suffix not in _MD_LINKABLE_EXTS:
+        if suffix in _MD_CODE_EXTS and suffix not in _MD_LINKABLE_EXTS:
             # Record source file link as citation; resolver mints edge if scanned (#4804).
             try:
                 cited = os.path.relpath(
