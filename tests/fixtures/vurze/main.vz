@@ -1,5 +1,6 @@
 import "lib/vec.vz"
 import "std/io.vz"   // not in this tree: an external module stub
+extern fn vz_now() -> f64
 
 struct Scene<T> { rays: *Ray, n: i64, tag: T }
 
@@ -26,6 +27,7 @@ fn trace(sc: *Scene<i64>, r: Ray) -> f32 {
 
 fn main() -> i32 {
   var sc = Scene(null, 0, 7)
+  let t0 = vz_now()
   printf("%f\n", trace(&sc, Ray(v3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0))) as f64)
   return 0
 }

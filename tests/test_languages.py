@@ -6520,6 +6520,17 @@ def test_vurze_cross_file_resolution(tmp_path):
     # a function used as a value (a hook) is an indirect call
     assert ("trace()", "on_tick()") in _vz_pairs(r, "indirect_call")
     assert ("Vec3", "Measure") in _vz_pairs(r, "implements")
+    # an `extern fn` some file of the corpus exports: the call reaches the Vurze
+    # definition through the imports, and the definition implements the symbol
+    kinds = {n["id"]: n["metadata"]["kind"] for n in r["nodes"]}
+    by_label = {}
+    for n in r["nodes"]:
+        by_label.setdefault(n["label"], []).append(n["id"])
+    defn = next(i for i in by_label["vz_now()"] if kinds[i] == "fn")
+    ext = next(i for i in by_label["vz_now()"] if kinds[i] == "extern_fn")
+    main_id = by_label["main()"][0]
+    assert any(e["source"] == main_id and e["target"] == defn and e["relation"] == "calls" for e in r["edges"])
+    assert any(e["source"] == defn and e["target"] == ext and e["relation"] == "implements" for e in r["edges"])
     # a local closure `f` is not a call to anything
     assert not any(t == "f()" for _s, t in _vz_pairs(r, "calls"))
 

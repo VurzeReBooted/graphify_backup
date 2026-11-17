@@ -1234,6 +1234,20 @@ def resolve_vurze_references(
                 emit(got[0], n["id"], "implements", {"source_file": n.get("source_file", ""),
                      "source_location": n.get("source_location")}, "INFERRED", 0.75, "structural_trait")
 
+    # an `extern fn` that a Vurze file exports itself (the runtime's backends:
+    # std/gfx.vz declares gfx_time_s, runtime/gfx_vk_core.vz and gfx_sw.vz
+    # export it): each exporting definition `implements` the shared extern node
+    for n in all_nodes:
+        meta = n.get("metadata") or {}
+        if not is_vz(n) or meta.get("kind") != "extern_fn":
+            continue
+        name = str(n.get("label", "")).removesuffix("()")
+        for nid, _f, k in defs.get(name, []):
+            if k == "fn" and (node_by_id.get(nid, {}).get("metadata") or {}).get("export"):
+                emit(nid, n["id"], "implements", {"source_file": node_by_id[nid].get("source_file", ""),
+                     "source_location": node_by_id[nid].get("source_location")},
+                     "INFERRED", 0.85, "extern_definition")
+
     for rc in vz_calls:
         caller = rc.get("caller_nid")
         name = str(rc.get("callee", ""))
