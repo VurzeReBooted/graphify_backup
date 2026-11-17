@@ -1,0 +1,31 @@
+import "lib/vec.vz"
+import "std/io.vz"   // not in this tree: an external module stub
+
+struct Scene<T> { rays: *Ray, n: i64, tag: T }
+
+@vertex export fn vs_main(verts: *f32, vid: i64) -> f32x4 {
+  let p = verts[vid * 4]
+  return f32x4(p, 0.0, 0.0, 1.0)
+}
+
+@compute(64) fn cs_step(buf: *f32, i: i64) { buf[i] = lerp(buf[i], 0.0, 0.5) }
+
+fn on_tick(dt: f32) -> i64 { return 0 }
+var tick_hook: fn(f32) -> i64 = on_tick
+
+fn trace(sc: *Scene<i64>, r: Ray) -> f32 {
+  var v = v3(1.0, 2.0, 3.0)
+  let u = v.unit()
+  let k = sizeof[Vec3] as f32
+  let rays = alloc[Ray](sc.n)
+  let f = |x: f32| x * k
+  tick_hook = on_tick
+  let s = Shape.Sphere(v, 1.0)
+  return f(u.len()) + v3_dot(r.dir, u) + shape_area(s)
+}
+
+fn main() -> i32 {
+  var sc = Scene(null, 0, 7)
+  printf("%f\n", trace(&sc, Ray(v3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0))) as f64)
+  return 0
+}

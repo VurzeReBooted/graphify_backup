@@ -1,0 +1,5 @@
+[tile.mossy_bricks]
+pattern = "bricks"
+
+[block.stone]
+hardness = 3.0

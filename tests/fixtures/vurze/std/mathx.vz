@@ -1,0 +1,4 @@
+// stand-in for a std module
+@fp_exact(module)
+const fn clampi(x: i64, lo: i64, hi: i64) -> i64 { if x < lo { return lo } if x > hi { return hi } return x }
+fn lerp(a: f32, b: f32, t: f32) -> f32 { return a + (b - a) * t }

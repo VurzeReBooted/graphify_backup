@@ -1,0 +1,31 @@
+# Blocks and the tiles they are painted with (fixture).
+title = "base blocks"
+
+[tile.stone]
+pattern = "stone"
+colors = ["#8d8a86", "#5f5c5a",
+          "#b6b2a8"]   # an array over two lines
+rotate = true
+
+[block.stone]
+name = "Stone"
+tile = "stone"
+hardness = 1.5
+drops = [{ item = "cobble", count = 1 }]
+
+[[recipe]]
+id = "bricks"
+needs = { stone = 4 }
+
+[[recipe]]
+id = "well"
+note = """
+A multi-line string with [brackets] and key = value inside,
+which is not a table or a key."""
+
+[[recipe.step]]
+do = "dig"
+
+[world]
+sun.height = 0.8   # a dotted key: [world.sun] is implicit
+"quoted key" = 'literal'

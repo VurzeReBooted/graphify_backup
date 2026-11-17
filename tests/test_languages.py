@@ -6386,3 +6386,232 @@ def test_julia_qualified_functor_uses_type_not_variable(tmp_path):
     call_nodes = [n for n in r["nodes"] if n["id"].endswith("_call")]
     # Module-qualified receiver types resolve to the bare type, never the variable.
     assert [n["label"] for n in call_nodes] == ["(Box)()"]
+
+
+# ── Vurze (.vz) ───────────────────────────────────────────────────────────────
+
+from graphify.extract import extract as _extract_corpus, extract_toml, extract_vurze  # noqa: E402
+
+VURZE = FIXTURES / "vurze"
+TOML_MODS = FIXTURES / "toml_mods"
+
+
+def _vz_corpus(root: Path, tmp_path: Path) -> dict:
+    files = sorted(root.rglob("*.vz"))
+    return _extract_corpus(files, root=root, parallel=False, cache_root=tmp_path)
+
+
+def _vz_edges(r: dict, relation: str) -> set[tuple[str, str, str, str]]:
+    labels = {n["id"]: n["label"] for n in r["nodes"]}
+    return {
+        (labels.get(e["source"], e["source"]), labels.get(e["target"], e["target"]),
+         e.get("context") or "", e["confidence"])
+        for e in r["edges"] if e["relation"] == relation
+    }
+
+
+def _vz_pairs(r: dict, relation: str) -> set[tuple[str, str]]:
+    return {(a, b) for a, b, _c, _f in _vz_edges(r, relation)}
+
+
+def test_vurze_registered_like_every_language():
+    from graphify.detect import CODE_EXTENSIONS, classify_file, FileType
+    from graphify.extract import _DISPATCH, _get_extractor, _lang_family
+    from graphify.extractors import LANGUAGE_EXTRACTORS
+    from graphify.rcfile import parse_language_value
+    assert ".vz" in CODE_EXTENSIONS and ".toml" in CODE_EXTENSIONS
+    assert _DISPATCH[".vz"] is extract_vurze and _DISPATCH[".toml"] is extract_toml
+    assert LANGUAGE_EXTRACTORS["vurze"] is extract_vurze
+    assert LANGUAGE_EXTRACTORS["toml"] is extract_toml
+    assert classify_file(Path("game/homestead.vz")) == FileType.CODE
+    assert classify_file(Path("content/base/world.toml")) == FileType.CODE
+    assert _lang_family("re/chunks.vz") == "vurze"
+    assert parse_language_value("vurze") == ".vz"
+    # '.v' stays Verilog; package manifests keep their own extractor
+    assert _get_extractor(Path("top.v")) is extract_verilog
+    assert _get_extractor(Path("pyproject.toml")) is not extract_toml
+    assert _get_extractor(Path("Cargo.toml")) is not extract_toml
+
+
+def test_vurze_declarations():
+    r = extract_vurze(VURZE / "lib" / "vec.vz")
+    assert "error" not in r
+    kinds = {n["label"]: n["metadata"]["kind"] for n in r["nodes"]}
+    assert kinds["vec.vz"] == "file"
+    assert kinds["Vec3"] == "struct" and kinds["Ray"] == "struct"
+    assert kinds["Shape"] == "enum" and kinds["Measure"] == "trait"
+    assert kinds["v3()"] == "fn" and kinds["v3_dot()"] == "fn"
+    assert kinds[".len()"] == "method" and kinds[".unit()"] == "method"
+    assert kinds["V_EPS"] == "global" and kinds["counter"] == "global"
+    assert kinds["sqrtf()"] == "extern_fn"
+    assert kinds["Vec3_eq()"] == "derived_fn" and kinds["Vec3_debug()"] == "derived_fn"
+    for variant in ("Sphere", "Plane", "Empty"):
+        assert kinds[variant] == "enum_variant"
+    assert ("Shape", "Sphere") in _vz_pairs(r, "case_of")
+    # methods hang off their type, functions off the file
+    assert ("Vec3", ".len()") in _vz_pairs(r, "method")
+    assert ("vec.vz", "v3()") in _vz_pairs(r, "contains")
+    meta = _node_by_label(r, "helper")["metadata"]
+    assert meta["private"] is True
+    assert _node_by_label(r, "counter")["metadata"]["mutable"] is True
+
+
+def test_vurze_in_file_calls_and_types_are_extracted():
+    r = extract_vurze(VURZE / "lib" / "vec.vz")
+    calls = _vz_edges(r, "calls")
+    assert (".unit()", ".len()", "call", "EXTRACTED") in calls   # self.len()
+    assert (".unit()", "v3()", "call", "EXTRACTED") in calls
+    assert (".len()", "v3_dot()", "call", "EXTRACTED") in calls
+    refs = _vz_edges(r, "references")
+    assert ("Ray", "Vec3", "field", "EXTRACTED") in refs
+    assert ("v3()", "Vec3", "return_type", "EXTRACTED") in refs
+    assert (".unit()", "V_EPS", "value", "EXTRACTED") in refs
+    assert (".len()", "counter", "value", "EXTRACTED") in refs
+    # `v3_dot(` inside a string or a comment is not a call; match arms are not calls
+    assert all(src != "shape_area()" for src, _t in _vz_pairs(r, "calls"))
+    assert not any(t in ("Sphere", "Plane") for _s, t in _vz_pairs(r, "calls"))
+
+
+def test_vurze_attributes():
+    main = extract_vurze(VURZE / "main.vz")
+    vs = _node_by_label(main, "vs_main")["metadata"]
+    assert vs["shader_stage"] == "vertex" and vs["export"] is True
+    cs = _node_by_label(main, "cs_step")["metadata"]
+    assert cs["shader_stage"] == "compute" and cs["workgroup_size"] == [64]
+    attrs = _vz_pairs(main, "references")
+    assert ("vs_main()", "@vertex") in attrs and ("cs_step()", "@compute") in attrs
+    mathx = extract_vurze(VURZE / "std" / "mathx.vz")
+    assert ("mathx.vz", "@fp_exact(module)") in _vz_pairs(mathx, "references")
+    for fn in ("clampi", "lerp"):
+        assert _node_by_label(mathx, fn)["metadata"]["fp_exact"] is True
+    assert _node_by_label(mathx, "clampi")["metadata"]["const"] is True
+
+
+def test_vurze_imports_resolve_like_the_compiler(tmp_path):
+    r = _vz_corpus(VURZE, tmp_path)
+    imports = _vz_pairs(r, "imports_from")
+    assert ("main.vz", "vec.vz") in imports
+    # `import "std/mathx.vz"` from lib/ is found in a folder above the importer
+    assert ("vec.vz", "mathx.vz") in imports
+    # an import that is not on disk becomes a stub named by the import string
+    assert ("main.vz", "std/io.vz") in imports
+
+
+def test_vurze_cross_file_resolution(tmp_path):
+    r = _vz_corpus(VURZE, tmp_path)
+    calls = _vz_edges(r, "calls")
+    # directly imported file: EXTRACTED
+    assert ("trace()", "v3()", "call", "EXTRACTED") in calls
+    assert ("trace()", "shape_area()", "call", "EXTRACTED") in calls
+    # reached through lib/vec.vz's own import: INFERRED
+    assert ("cs_step()", "lerp()", "call", "INFERRED") in calls
+    # a private function is never bound from another file
+    assert not any(t == "helper()" and s != "helper()" for s, t, _c, _f in calls if s in ("trace()", "main()"))
+    # the receiver's type comes from the call that made it (v = v3(...) -> Vec3)
+    assert ("trace()", ".unit()", "call", "EXTRACTED") in calls
+    # an extern C symbol lands on the one shared extern node
+    assert (".len()", "sqrtf()", "extern_call", "EXTRACTED") in calls
+    refs = _vz_edges(r, "references")
+    assert ("main()", "Ray", "constructor", "EXTRACTED") in refs
+    assert ("trace()", "Ray", "parameter_type", "EXTRACTED") in refs
+    assert ("trace()", "Shape", "variant", "EXTRACTED") in refs       # Shape.Sphere(...)
+    assert ("trace()", "Vec3", "generic_arg", "EXTRACTED") in refs    # sizeof[Vec3]
+    assert ("Scene", "Ray", "field", "EXTRACTED") in refs
+    # a function used as a value (a hook) is an indirect call
+    assert ("trace()", "on_tick()") in _vz_pairs(r, "indirect_call")
+    assert ("Vec3", "Measure") in _vz_pairs(r, "implements")
+    # a local closure `f` is not a call to anything
+    assert not any(t == "f()" for _s, t in _vz_pairs(r, "calls"))
+
+
+def test_vurze_lexer_edge_cases(tmp_path):
+    f = tmp_path / "edge.vz"
+    f.write_text(
+        'struct Pair<A, B> { a: A, b: B }\n'
+        'struct Box<T> { v: T }\n'
+        'fn take(p: *Box<Pair<i64, f64>>) -> i64 { return 0 }\n'        # `>>` closes two lists
+        'fn s() -> *u8 { return "a \\" fn fake() { } // not code" }\n'  # escaped quote
+        'fn shift(x: i64) -> i64 { return x >> 2 }\n'
+        'let TABLE: [i64; 4] = [1, 2,\n  3, 4]\n'                       # a global over two lines
+        'fn caller() -> i64 { let t = TABLE[0]\n  return take(null) + shift(t) }\n'
+        'fn été() {}\n'                                       # a character Vurze lacks
+    )
+    r = extract_vurze(f)
+    labels = set(_labels(r))
+    assert {"Pair", "Box", "take()", "s()", "shift()", "TABLE", "caller()"} <= labels
+    assert "fake()" not in labels
+    refs = _vz_pairs(r, "references")
+    assert ("take()", "Box") in refs and ("take()", "Pair") in refs
+    calls = _vz_pairs(r, "calls")
+    assert ("caller()", "take()") in calls and ("caller()", "shift()") in calls
+    assert ("caller()", "TABLE") in refs
+
+
+def test_vurze_case_folded_ids_do_not_collide(tmp_path):
+    f = tmp_path / "v.vz"
+    f.write_text("struct V3 { x: f64 }\nfn v3(x: f64) -> V3 { return V3(x) }\n")
+    r = extract_vurze(f)
+    ids = [n["id"] for n in r["nodes"]]
+    assert len(ids) == len(set(ids))
+    assert {"V3", "v3()"} <= set(_labels(r))
+    assert ("v3()", "V3") in _vz_pairs(r, "references")
+
+
+# ── TOML (.toml) ──────────────────────────────────────────────────────────────
+
+def test_toml_tables_arrays_and_keys():
+    r = extract_toml(TOML_MODS / "content" / "base" / "homestead" / "blocks.toml")
+    kinds = {n["label"]: n["metadata"]["kind"] for n in r["nodes"]}
+    assert kinds["[tile.stone]"] == "table" and kinds["[tile]"] == "table"
+    assert kinds["[[recipe]]"] == "array_table"
+    assert kinds["[[recipe]] bricks"] == "array_entry"   # labelled by its id
+    assert kinds["[[recipe]] well"] == "array_entry"
+    assert kinds["[[recipe.step]] #0"] == "array_entry"  # nested under recipe[1]
+    assert kinds["[world.sun]"] == "table"                # implicit, from a dotted key
+    assert kinds["tile.stone.colors"] == "key"            # an array over two lines
+    assert kinds["world.quoted key"] == "key"
+    assert kinds["title"] == "key"
+    # a multi-line string's [brackets] and `k = v` are not tables or keys
+    assert not any("brackets" in label for label in kinds)
+    contains = _vz_pairs(r, "contains")
+    assert ("[tile]", "[tile.stone]") in contains
+    assert ("[tile.stone]", "tile.stone.pattern") in contains
+    assert ("[[recipe]] well", "[[recipe.step]]") in contains
+    assert ("[world.sun]", "world.sun.height") in contains
+    assert ("blocks.toml", "title") in contains
+    assert _node_by_label(r, "block.stone.hardness")["metadata"]["value"] == "1.5"
+    assert _node_by_label(r, "tile.stone.pattern")["metadata"]["value"] == "stone"
+
+
+def test_toml_key_cap(monkeypatch):
+    monkeypatch.setenv("GRAPHIFY_TOML_MAX_KEYS", "2")
+    r = extract_toml(TOML_MODS / "content" / "base" / "homestead" / "blocks.toml")
+    assert sum(1 for n in r["nodes"] if n["metadata"]["kind"] == "key") == 2
+    assert "[world.sun]" in _labels(r)   # tables are not capped by the key cap
+
+
+def test_toml_mod_merge_overrides(tmp_path):
+    files = sorted(TOML_MODS.rglob("*.toml"))
+    r = _extract_corpus(files, root=TOML_MODS, parallel=False, cache_root=tmp_path)
+    by_id = {n["id"]: n for n in r["nodes"]}
+    over = set()
+    for e in r["edges"]:
+        if e["relation"] != "overrides":
+            continue
+        assert e.get("context") == "mod_merge"
+        src, tgt = by_id[e["source"]], by_id[e["target"]]
+        over.add((src["source_file"].split("toml_mods/")[-1], src["label"],
+                  tgt["source_file"].split("toml_mods/")[-1], tgt["label"]))
+    mod = "mods/mossy/homestead/blocks.toml"
+    game = "content/game/homestead/blocks.toml"
+    base = "content/base/homestead/blocks.toml"
+    # the mod merges over the game layer, the game layer over base
+    assert (mod, "blocks.toml", game, "blocks.toml") in over
+    assert (game, "blocks.toml", base, "blocks.toml") in over
+    assert (mod, "block.stone.hardness", game, "block.stone.hardness") in over
+    assert (game, "block.stone.hardness", base, "block.stone.hardness") in over
+    # a table only base has is overridden there (the nearest layer that has it)
+    assert (mod, "[tile]", base, "[tile]") in over
+    # new content overrides nothing; mod.toml is the mod's own manifest
+    assert not any(label == "[tile.mossy_bricks]" for _a, label, _b, _c in over)
+    assert not any(a.endswith("mod.toml") for a, _l, _b, _c in over)

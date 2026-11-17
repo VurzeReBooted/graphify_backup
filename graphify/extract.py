@@ -92,8 +92,10 @@ from graphify.extractors.solidity import (  # noqa: F401
 )
 from graphify.extractors.sql import _norm_ident as _sql_norm_ident, extract_sql  # noqa: F401
 from graphify.extractors.terraform import extract_terraform, prepare_terraform, resolve_terraform_modules  # noqa: F401
+from graphify.extractors.toml_config import extract_toml  # noqa: F401
 from graphify.extractors.verilog import extract_verilog  # noqa: F401
 from graphify.extractors.vbnet import extract_vbnet, resolve_vbnet_partial_calls  # noqa: F401
+from graphify.extractors.vurze import extract_vurze, resolve_vurze_references  # noqa: F401
 from graphify.extractors.zig import extract_zig  # noqa: F401
 from graphify.security import sanitize_metadata
 from graphify.paths import disambiguate_ambiguous_candidates
@@ -4643,6 +4645,7 @@ _LANG_FAMILY_BY_EXT: dict[str, str] = {
     ".sql": "sql",
     ".sh": "shell", ".bash": "shell",
     ".ps1": "powershell", ".psm1": "powershell", ".psd1": "powershell",
+    ".vz": "vurze",
 }
 
 
@@ -9941,6 +9944,12 @@ register_language_resolver(
         "markdown_mentions", MARKDOWN_MENTION_SUFFIXES, resolve_markdown_mentions
     )
 )
+# Vurze: calls, type uses, struct constructions, fn values and global reads
+# that a .vz file makes of names declared in another file, bound through the
+# file's transitive `import "x.vz"` closure (graphify.extractors.vurze).
+register_language_resolver(
+    LanguageResolver("vurze_references", frozenset({".vz"}), resolve_vurze_references)
+)
 
 
 # Inline markdown link: [text](target "optional title"). The negative lookbehind
@@ -11078,6 +11087,8 @@ _DISPATCH: dict[str, Any] = {
     ".resource": extract_robot,
     ".cls": extract_apex,
     ".trigger": extract_apex,
+    ".vz": extract_vurze,
+    ".toml": extract_toml,
 }
 
 
@@ -13045,6 +13056,11 @@ def extract(
         # cited file as evidence; a global name match here would mint a `calls`
         # edge from a heading to whatever shares the name.
         if rc.get("language") == "markdown":
+            continue
+        # Vurze names are bound by resolve_vurze_references (registered below),
+        # which scopes them to the caller file's transitive imports and knows a
+        # struct construction / fn value / extern symbol from a call.
+        if rc.get("language") == "vurze":
             continue
         # A Solidity name is visible only through the caller contract's own
         # bases; resolve_solidity_inherited_calls binds those. A corpus-wide

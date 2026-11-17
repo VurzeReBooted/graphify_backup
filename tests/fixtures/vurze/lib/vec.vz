@@ -1,0 +1,34 @@
+// A tiny vector library (fixture for graphify's Vurze extractor).
+import "std/mathx.vz"
+extern fn sqrtf(x: f32) -> f32
+
+@derive(eq, debug)
+struct Vec3 { x: f32, y: f32, z: f32 }
+struct Ray { origin: Vec3, dir: Vec3 }     // field types: references
+
+enum Shape { Sphere(Vec3, f32), Plane(Vec3), Empty }
+
+trait Measure { fn len(self: *Self) -> f32 }
+
+let V_EPS: f32 = 0.0001
+private var counter: i64 = 0
+
+fn v3(x: f32, y: f32, z: f32) -> Vec3 { return Vec3(x, y, z) }
+fn v3_dot(a: Vec3, b: Vec3) -> f32 { return a.x * b.x + a.y * b.y + a.z * b.z }
+fn Vec3.len(self: *Vec3) -> f32 {
+  counter += 1
+  return sqrtf(v3_dot(self[0], self[0]))   // "v3_dot(" in a string: not a call
+}
+fn Vec3.unit(self: *Vec3) -> Vec3 {
+  let l = self.len()
+  if l < V_EPS { return v3(0.0, 0.0, 0.0) }
+  return v3(self.x / l, self.y / l, self.z / l)
+}
+private fn helper(n: i64) -> i64 { return clampi(n, 0, 10) }
+fn shape_area(s: Shape) -> f32 {
+  match s {
+    Sphere(c, r) => { return 4.0 * r * r }
+    Plane(n) => { return 0.0 }
+    Empty => { return 0.0 }
+  }
+}

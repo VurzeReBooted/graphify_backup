@@ -75,6 +75,8 @@ LANGUAGE_ALIASES: dict[str, str] = {
     "markdown": ".md",
     "json": ".json",
     "yaml": ".yaml",
+    "toml": ".toml",
+    "vurze": ".vz",
     "html": ".html",
 }
 
